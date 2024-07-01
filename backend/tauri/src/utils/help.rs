@@ -1,7 +1,10 @@
 use crate::config::nyanpasu::ExternalControllerPortStrategy;
 use anyhow::{anyhow, bail, Context, Result};
 use display_info::DisplayInfo;
-use fast_image_resize as fr;
+use fast_image_resize::{
+    images::{Image, ImageRef},
+    FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer,
+};
 use image::{codecs::png::PngEncoder, io::Reader as ImageReader, ColorType, ImageEncoder};
 use nanoid::nanoid;
 use serde::{de::DeserializeOwned, Serialize};
@@ -9,12 +12,14 @@ use serde_yaml::{Mapping, Value};
 use std::{
     fs,
     io::{BufWriter, Cursor},
-    num::NonZeroU32,
     path::PathBuf,
     str::FromStr,
 };
 use tauri::{
-    api::shell::{open, Program},
+    api::{
+        process::current_binary,
+        shell::{open, Program},
+    },
     AppHandle, Manager,
 };
 use tracing::{debug, warn};
@@ -152,47 +157,41 @@ pub fn resize_tray_image(img: &[u8], scale_factor: f64) -> Result<Vec<u8>> {
     let img = ImageReader::new(Cursor::new(img))
         .with_guessed_format()?
         .decode()?;
-    let width = NonZeroU32::new(img.width()).unwrap_or(NonZeroU32::new(16).unwrap());
-    let height = NonZeroU32::new(img.height()).unwrap_or(NonZeroU32::new(16).unwrap());
-    let mut src_image = fr::Image::from_vec_u8(
-        width,
-        height,
-        img.to_rgba8().into_raw(),
-        fr::PixelType::U8x4,
-    )
-    .context("failed to parse image")?;
-    // Multiple RGB channels of source image by alpha channel
-    let alpha_mul_div = fr::MulDiv::default();
-    alpha_mul_div
-        .multiply_alpha_inplace(&mut src_image.view_mut())
-        .context("failed to multiply alpha")?;
+    let width = img.width();
+    let height = img.height();
+    let src_pixels = img.into_rgba8().into_raw();
+    let src_image = ImageRef::new(width, height, &src_pixels, PixelType::U8x4)
+        .context("failed to parse image")?;
+
     // Create container for data of destination image
     let size = (32_f64 * scale_factor).round() as u32; // 32px is the base tray size as the dpi is 96
-    let dst_width = NonZeroU32::new(size).unwrap();
-    let dst_height = NonZeroU32::new(size).unwrap();
-    let mut dst_image = fr::Image::new(dst_width, dst_height, src_image.pixel_type());
-
-    // Get mutable view of destination image data
-    let mut dst_view = dst_image.view_mut();
+    let dst_width = size;
+    let dst_height = size;
+    let mut dst_image = Image::new(dst_width, dst_height, src_image.pixel_type());
 
     // Create Resizer instance and resize source image
     // into buffer of destination image
-    let mut resizer = fr::Resizer::new(fr::ResizeAlg::Convolution(fr::FilterType::Lanczos3));
+    let mut resizer = Resizer::new();
+    let resizer_options = ResizeOptions {
+        algorithm: ResizeAlg::Convolution(FilterType::Lanczos3),
+        ..Default::default()
+    };
     resizer
-        .resize(&src_image.view(), &mut dst_view)
+        .resize(&src_image, &mut dst_image, &resizer_options)
         .context("failed to resize image")?;
-    // Divide RGB channels of destination image by alpha
-    alpha_mul_div.divide_alpha_inplace(&mut dst_view).unwrap();
+
+    // Extract raw pixel data from the destination image
+    let dst_image_data = dst_image.buffer().to_vec();
 
     // Write destination image as PNG-file
     let mut result_buf = BufWriter::new(Vec::new());
     PngEncoder::new(&mut result_buf).write_image(
-        dst_image.buffer(),
-        dst_width.get(),
-        dst_height.get(),
+        &dst_image_data,
+        dst_width,
+        dst_height,
         ColorType::Rgba8.into(),
     )?;
-    Ok(result_buf.buffer().to_vec())
+    Ok(result_buf.into_inner()?)
 }
 
 #[instrument]
@@ -216,14 +215,36 @@ pub fn get_max_scale_factor() -> f64 {
 }
 
 #[instrument(skip(app_handle))]
-pub fn quit_application(app_handle: &AppHandle) {
+fn cleanup_processes(app_handle: &AppHandle) {
     let _ = super::resolve::save_window_state(app_handle, true);
-
     super::resolve::resolve_reset();
     tauri::api::process::kill_children();
+}
+
+#[instrument(skip(app_handle))]
+pub fn quit_application(app_handle: &AppHandle) {
+    cleanup_processes(app_handle);
     app_handle.exit(0);
-    // flush all data to disk
-    crate::core::storage::Storage::global().destroy().unwrap();
+    std::process::exit(0);
+}
+
+#[instrument(skip(app_handle))]
+pub fn restart_application(app_handle: &AppHandle) {
+    cleanup_processes(app_handle);
+    let env = app_handle.env();
+    let path = current_binary(&env).unwrap();
+    let arg = std::env::args().collect::<Vec<String>>();
+    let mut args = vec!["launch".to_string(), "--".to_string()];
+    // filter out the first arg
+    if arg.len() > 1 {
+        args.extend(arg.iter().skip(1).cloned());
+    }
+    tracing::info!("restart app: {:#?} with args: {:#?}", path, args);
+    std::process::Command::new(path)
+        .args(args)
+        .spawn()
+        .expect("application failed to start");
+    app_handle.exit(0);
     std::process::exit(0);
 }
 
@@ -301,17 +322,17 @@ fn test_parse_value() {
     let test_1 = "upload=111; download=2222; total=3333; expire=444";
     let test_2 = "attachment; filename=Clash.yaml";
 
-    assert_eq!(parse_str::<usize>(test_1, "upload=").unwrap(), 111);
-    assert_eq!(parse_str::<usize>(test_1, "download=").unwrap(), 2222);
-    assert_eq!(parse_str::<usize>(test_1, "total=").unwrap(), 3333);
-    assert_eq!(parse_str::<usize>(test_1, "expire=").unwrap(), 444);
+    assert_eq!(parse_str::<usize>(test_1, "upload").unwrap(), 111);
+    assert_eq!(parse_str::<usize>(test_1, "download").unwrap(), 2222);
+    assert_eq!(parse_str::<usize>(test_1, "total").unwrap(), 3333);
+    assert_eq!(parse_str::<usize>(test_1, "expire").unwrap(), 444);
     assert_eq!(
-        parse_str::<String>(test_2, "filename=").unwrap(),
+        parse_str::<String>(test_2, "filename").unwrap(),
         format!("Clash.yaml")
     );
 
-    assert_eq!(parse_str::<usize>(test_1, "aaa="), None);
-    assert_eq!(parse_str::<usize>(test_1, "upload1="), None);
-    assert_eq!(parse_str::<usize>(test_1, "expire1="), None);
-    assert_eq!(parse_str::<usize>(test_2, "attachment="), None);
+    assert_eq!(parse_str::<usize>(test_1, "aaa"), None);
+    assert_eq!(parse_str::<usize>(test_1, "upload1"), None);
+    assert_eq!(parse_str::<usize>(test_1, "expire1"), None);
+    assert_eq!(parse_str::<usize>(test_2, "attachment"), None);
 }

@@ -2,7 +2,7 @@ use crate::{cmds, config::Config, feat, utils, utils::resolve};
 use anyhow::Result;
 use rust_i18n::t;
 use tauri::{
-    api, AppHandle, CustomMenuItem, Manager, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
+    AppHandle, CustomMenuItem, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
     SystemTraySubmenu,
 };
 use tracing_attributes::instrument;
@@ -10,7 +10,7 @@ use tracing_attributes::instrument;
 mod icon;
 pub mod proxies;
 pub use self::icon::on_scale_factor_changed;
-use self::{icon::TrayIcon, proxies::SystemTrayMenuProxiesExt};
+use self::proxies::SystemTrayMenuProxiesExt;
 
 pub struct Tray {}
 
@@ -95,6 +95,8 @@ impl Tray {
 
         #[cfg(target_os = "windows")]
         {
+            use icon::TrayIcon;
+
             let mode = if *tun_mode {
                 TrayIcon::Tun
             } else if *system_proxy {
@@ -151,7 +153,7 @@ impl Tray {
                 "open_core_dir" => crate::log_err!(cmds::open_core_dir()),
                 "open_logs_dir" => crate::log_err!(cmds::open_logs_dir()),
                 "restart_clash" => feat::restart_clash_core(),
-                "restart_app" => api::process::restart(&app_handle.env()),
+                "restart_app" => utils::help::restart_application(app_handle),
                 "quit" => {
                     utils::help::quit_application(app_handle);
                 }

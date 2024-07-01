@@ -45,13 +45,13 @@ pub async fn enhance_profiles() -> CmdResult {
 
 #[tauri::command]
 pub async fn import_profile(url: String, option: Option<PrfOption>) -> CmdResult {
-    let item = wrap_err!(PrfItem::from_url(&url, None, None, option).await)?;
+    let item = wrap_err!(ProfileItem::from_url(&url, None, None, option).await)?;
     wrap_err!(Config::profiles().data().append_item(item))
 }
 
 #[tauri::command]
-pub async fn create_profile(item: PrfItem, file_data: Option<String>) -> CmdResult {
-    let item = wrap_err!(PrfItem::from(item, file_data).await)?;
+pub async fn create_profile(item: ProfileItem, file_data: Option<String>) -> CmdResult {
+    let item = wrap_err!(ProfileItem::duplicate(item, file_data).await)?;
     wrap_err!(Config::profiles().data().append_item(item))
 }
 
@@ -98,7 +98,7 @@ pub async fn patch_profiles_config(profiles: IProfiles) -> CmdResult {
 
 /// 修改某个profile item的
 #[tauri::command]
-pub fn patch_profile(index: String, profile: PrfItem) -> CmdResult {
+pub fn patch_profile(index: String, profile: ProfileItem) -> CmdResult {
     wrap_err!(Config::profiles().data().patch_item(index, profile))?;
     ProfilesJobGuard::global().lock().refresh();
     Ok(())
@@ -266,7 +266,7 @@ pub fn save_window_size_state() -> CmdResult<()> {
 
 #[tauri::command]
 pub async fn fetch_latest_core_versions() -> CmdResult<ManifestVersionLatest> {
-    let mut updater = updater::Updater::global().write().await; // It is intended to block here
+    let mut updater = updater::UpdaterManager::global().write().await; // It is intended to block here
     wrap_err!(updater.fetch_latest().await)?;
     Ok(updater.get_latest_versions())
 }
@@ -305,14 +305,24 @@ pub async fn collect_logs() -> CmdResult {
 }
 
 #[tauri::command]
-pub async fn update_core(core_type: nyanpasu::ClashCore) -> CmdResult {
+pub async fn update_core(core_type: nyanpasu::ClashCore) -> CmdResult<usize> {
     wrap_err!(
-        updater::Updater::global()
-            .read()
+        updater::UpdaterManager::global()
+            .write()
             .await
             .update_core(&core_type)
             .await
     )
+}
+
+#[tauri::command]
+pub async fn inspect_updater(updater_id: usize) -> CmdResult<updater::UpdaterSummary> {
+    let updater = wrap_err!(updater::UpdaterManager::global()
+        .read()
+        .await
+        .inspect_updater(updater_id)
+        .ok_or(anyhow::anyhow!("updater is not exist")))?;
+    Ok(updater)
 }
 
 #[tauri::command]
@@ -384,38 +394,43 @@ pub fn get_custom_app_dir() -> CmdResult<Option<String>> {
 pub async fn set_custom_app_dir(app_handle: tauri::AppHandle, path: String) -> CmdResult {
     use crate::utils::{self, dialog::migrate_dialog, winreg::set_app_dir};
     use rust_i18n::t;
-    use std::{path::PathBuf, time::Duration};
+    use std::path::PathBuf;
 
     let path_str = path.clone();
     let path = PathBuf::from(path);
 
     // show a dialog to ask whether to migrate the data
-    let res = tauri::async_runtime::spawn_blocking(move || {
-        let msg = t!("dialog.custom_app_dir_migrate", path = path_str).to_string();
+    let res =
+        tauri::async_runtime::spawn_blocking(move || {
+            let msg = t!("dialog.custom_app_dir_migrate", path = path_str).to_string();
 
-        if migrate_dialog(&msg) {
-            let app_exe = tauri::utils::platform::current_exe()?;
-            let app_exe = dunce::canonicalize(app_exe)?.to_string_lossy().to_string();
-            std::thread::spawn(move || {
+            if migrate_dialog(&msg) {
+                let app_exe = tauri::utils::platform::current_exe()?;
+                let app_exe = dunce::canonicalize(app_exe)?.to_string_lossy().to_string();
                 std::process::Command::new("powershell")
                     .arg("-Command")
                     .arg(
                     format!(
-                        r#"Start-Process '{}' -ArgumentList 'migrate-home-dir','{}' -Verb runAs"#,
+                        r#"Start-Process '{}' -ArgumentList 'migrate-home-dir','"{}"' -Verb runAs"#,
                         app_exe.as_str(),
                         path_str.as_str()
                     )
                     .as_str(),
                 ).spawn().unwrap();
                 utils::help::quit_application(&app_handle);
-            });
-        } else {
-            set_app_dir(&path)?;
-        }
-        Ok::<_, anyhow::Error>(())
-    })
-    .await;
+            } else {
+                set_app_dir(&path)?;
+            }
+            Ok::<_, anyhow::Error>(())
+        })
+        .await;
     wrap_err!(wrap_err!(res)?)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restart_application(app_handle: tauri::AppHandle) -> CmdResult {
+    crate::utils::help::restart_application(&app_handle);
     Ok(())
 }
 

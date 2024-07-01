@@ -15,12 +15,7 @@ use anyhow::Result;
 use semver::Version;
 use serde_yaml::Mapping;
 use std::net::TcpListener;
-use tauri::{api::process::Command, App, AppHandle, Manager, PhysicalPosition, PhysicalSize};
-
-#[cfg(target_os = "windows")]
-use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings6;
-#[cfg(target_os = "windows")]
-use windows::core::Interface;
+use tauri::{api::process::Command, App, AppHandle, Manager};
 
 pub fn find_unused_port() -> Result<u16> {
     match TcpListener::bind("127.0.0.1:0") {
@@ -125,7 +120,7 @@ pub fn create_window(app_handle: &AppHandle) {
     let mut builder = tauri::window::WindowBuilder::new(
         app_handle,
         "main".to_string(),
-        tauri::WindowUrl::App("/proxies".into()),
+        tauri::WindowUrl::App("/dashboard".into()),
     )
     .title("Clash Nyanpasu")
     .fullscreen(false)
@@ -155,6 +150,7 @@ pub fn create_window(app_handle: &AppHandle) {
 
     #[cfg(target_os = "windows")]
     {
+        use tauri::{PhysicalPosition, PhysicalSize};
         use window_shadows::set_shadow;
 
         match builder
@@ -270,21 +266,27 @@ pub fn create_window(app_handle: &AppHandle) {
     crate::log_err!(builder.decorations(true).transparent(false).build());
 
     #[cfg(target_os = "windows")]
-    app_handle
-        .get_window("main")
-        .unwrap()
-        .with_webview(|webview| unsafe {
-            let settings = webview
-                .controller()
-                .CoreWebView2()
-                .unwrap()
-                .Settings()
-                .unwrap();
-            let settings: ICoreWebView2Settings6 =
-                settings.cast::<ICoreWebView2Settings6>().unwrap();
-            settings.SetIsSwipeNavigationEnabled(false).unwrap();
-        })
-        .unwrap();
+    {
+        use webview2_com_bridge::{
+            webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings6,
+            windows::core::Interface,
+        };
+        app_handle
+            .get_window("main")
+            .unwrap()
+            .with_webview(|webview| unsafe {
+                let settings = webview
+                    .controller()
+                    .CoreWebView2()
+                    .unwrap()
+                    .Settings()
+                    .unwrap();
+                let settings: ICoreWebView2Settings6 =
+                    settings.cast::<ICoreWebView2Settings6>().unwrap();
+                settings.SetIsSwipeNavigationEnabled(false).unwrap();
+            })
+            .unwrap();
+    }
 }
 
 /// close main window

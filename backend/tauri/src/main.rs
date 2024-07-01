@@ -13,9 +13,8 @@ mod utils;
 use crate::{
     config::Config,
     core::{commands, handle::Handle},
-    utils::{dirs, init, resolve},
+    utils::{init, resolve},
 };
-use anyhow::Context;
 use tauri::{api, Manager, SystemTray};
 
 rust_i18n::i18n!("../../locales");
@@ -51,19 +50,14 @@ fn main() -> std::io::Result<()> {
     commands::parse().unwrap();
 
     // Should be in first place in order prevent single instance check block everything
+    #[cfg(feature = "verge-dev")]
+    tauri_plugin_deep_link::prepare("moe.elaina.clash.nyanpasu.dev");
+
+    #[cfg(not(feature = "verge-dev"))]
     tauri_plugin_deep_link::prepare("moe.elaina.clash.nyanpasu");
 
     // 单例检测
-    let placeholder = dirs::get_single_instance_placeholder();
-    let single_instance_result: anyhow::Result<()> =
-        single_instance::SingleInstance::new(&placeholder)
-            .context("failed to create single instance")
-            .map(|instance| {
-                if !instance.is_single() {
-                    println!("app exists");
-                    std::process::exit(0);
-                }
-            });
+    let single_instance_result = utils::init::check_singleton();
 
     // Use system locale as default
     let locale = {
@@ -86,7 +80,7 @@ fn main() -> std::io::Result<()> {
     rust_i18n::set_locale(verge.as_str());
 
     // show a dialog to print the single instance error
-    single_instance_result.unwrap();
+    let _singleton = single_instance_result.unwrap(); // hold the guard until the end of the program
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
@@ -148,6 +142,7 @@ fn main() -> std::io::Result<()> {
             // updater
             cmds::fetch_latest_core_versions,
             cmds::update_core,
+            cmds::inspect_updater,
             cmds::get_core_version,
             // utils
             cmds::collect_logs,
@@ -179,6 +174,7 @@ fn main() -> std::io::Result<()> {
             cmds::get_proxies,
             cmds::select_proxy,
             cmds::update_proxy_provider,
+            cmds::restart_application,
         ]);
 
     #[cfg(target_os = "macos")]
