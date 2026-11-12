@@ -4,3 +4,9 @@
 WixTools
 resources
 sidecar
+WebView2/
+tmp/
+/gen/*
+
+!/tmp/.gitkeep
+!tmp/.gitkeep

@@ -1,18 +1,45 @@
 export default {
-  "*.{js,cjs,.mjs,jsx}": ["prettier --write", "eslint --cache --fix"],
-  "*.{ts,tsx}": [
-    "prettier --write",
-    "eslint --cache --fix",
-    () => "tsc -p tsconfig.json --noEmit",
+  'scripts/**/*.ts': ['prettier --write', () => 'pnpm run lint:ts:scripts'],
+  '*.{js,cjs,.mjs,jsx}': (filenames) => {
+    const configFiles = [
+      '.oxlintrc.json',
+      '.lintstagedrc.js',
+      'commitlint.config.js',
+    ]
+    const filtered = filenames.filter(
+      (file) => !configFiles.some((config) => file.endsWith(config)),
+    )
+    if (filtered.length === 0) return []
+    // function tasks do not get the staged file list appended by lint-staged
+    const files = filtered.join(' ')
+    return [
+      `prettier --write ${files}`,
+      `oxlint --fix --no-error-on-unmatched-pattern ${files}`,
+    ]
+  },
+  'frontend/**/*.{ts,tsx}': [
+    'prettier --write',
+    'oxlint --fix',
+    () => 'pnpm typecheck',
+    () => 'pnpm run lint:frontend-boundaries',
   ],
-  "backend/**/*.{rs,toml}": [
+  'backend/**/*.{rs,toml}': [
     () =>
-      "cargo clippy --manifest-path=./backend/Cargo.toml --all-targets --all-features",
-    () => "cargo fmt --manifest-path ./backend/Cargo.toml --all",
+      'cargo clippy --manifest-path=./backend/Cargo.toml --all-targets --all-features',
+    () => 'cargo fmt --manifest-path ./backend/Cargo.toml --all',
     // () => 'cargo test --manifest-path=./backend/Cargo.toml',
     // () => "cargo fmt --manifest-path=./backend/Cargo.toml --all",
+    // do not submit untracked files
+    // () => 'git add -u',
   ],
-  "*.{html,sass,scss,less}": ["prettier --write", "stylelint --fix"],
-  "package.json": ["prettier --write"],
-  "*.{md,json,jsonc,json5,yaml,yml,toml}": ["prettier --write"],
-};
+  '*.{css,html,less}': ['prettier --write', 'stylelint --fix'],
+  'package.json': ['prettier --write'],
+  '*.{md,json,jsonc,json5,yaml,yml,toml}': (filenames) => {
+    // exclude frontend/nyanpasu/messages directory
+    const filtered = filenames.filter(
+      (file) => !file.includes('frontend/nyanpasu/messages/'),
+    )
+    if (filtered.length === 0) return []
+    return `prettier --write ${filtered.join(' ')}`
+  },
+}

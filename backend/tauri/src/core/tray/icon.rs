@@ -1,95 +1,178 @@
-use dashmap::DashMap;
-use once_cell::sync::Lazy;
-use std::{
-    fmt::{Display, Formatter},
-    sync::Arc,
-};
+use nyanpasu_paths::PathResolver;
+use nyanpasu_rpc_protocol::values::TrayIcon;
+use std::{borrow::Cow, path::PathBuf};
 
-#[derive(Debug, Clone, Default)]
-pub enum TrayIcon {
-    #[default]
-    Normal,
-    Tun,
-    SystemProxy,
+pub(crate) fn icon_path(config_dir: &std::path::Path, mode: &str) -> PathBuf {
+    config_dir.join("icons").join(format!("{mode}.png"))
 }
 
-impl Display for TrayIcon {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Normal => write!(f, "normal"),
-            Self::Tun => write!(f, "tun"),
-            Self::SystemProxy => write!(f, "system_proxy"),
+pub(crate) fn tray_icons_path(paths: &PathResolver, mode: &str) -> PathBuf {
+    let config = paths.app_config_dir();
+    crate::log_err!(nyanpasu_paths::create_dir_all(&config.join("icons")));
+    icon_path(config.as_std_path(), mode)
+}
+
+pub fn raw_bytes(mode: &TrayIcon) -> &'static [u8] {
+    match mode {
+        TrayIcon::Normal => include_bytes!("../../../icons/tray/cat/normal.png"),
+        TrayIcon::Tun => include_bytes!("../../../icons/tray/cat/tun.png"),
+        TrayIcon::SystemProxy => include_bytes!("../../../icons/tray/cat/system-proxy.png"),
+    }
+}
+
+#[tracing_attributes::instrument(skip(paths))]
+pub fn get_raw_icon<'n>(paths: &PathResolver, mode: TrayIcon) -> Cow<'n, [u8]> {
+    let path = tray_icons_path(paths, mode.as_str());
+    if !path.exists() {
+        return Cow::Borrowed(raw_bytes(&mode));
+    }
+    match std::fs::read(path) {
+        Ok(bytes) => Cow::Owned(bytes),
+        Err(e) => {
+            tracing::error!("failed to read icon file: {:?}", e);
+            Cow::Borrowed(raw_bytes(&mode))
         }
     }
 }
 
-impl From<TrayIcon> for &'static str {
-    fn from(icon: TrayIcon) -> Self {
-        match icon {
-            TrayIcon::Normal => "normal",
-            TrayIcon::Tun => "tun",
-            TrayIcon::SystemProxy => "system_proxy",
+#[tracing_attributes::instrument(skip(paths))]
+fn resize_image(paths: &PathResolver, mode: TrayIcon, scale_factor: f64) {
+    let raw_icon: Cow<[u8]> = get_raw_icon(paths, mode);
+    let icon = match crate::utils::help::resize_tray_image(&raw_icon, scale_factor) {
+        Ok(icon) => icon,
+        Err(e) => {
+            tracing::error!("failed to resize icon: {:?}", e);
+            raw_icon.to_vec()
         }
-    }
-}
-
-impl From<&TrayIcon> for &'static str {
-    fn from(icon: &TrayIcon) -> Self {
-        match icon {
-            TrayIcon::Normal => "normal",
-            TrayIcon::Tun => "tun",
-            TrayIcon::SystemProxy => "system_proxy",
-        }
-    }
-}
-
-// TODO: use the `icon` module to load the tray icon, and support macos, linux
-static RAW_ICON: Lazy<Arc<DashMap<&'static str, Vec<u8>>>> = Lazy::new(|| {
-    let m = DashMap::new();
-    #[cfg(windows)]
+    };
+    let cache_dir = paths.cache_dir().join("icons");
+    if !cache_dir.exists()
+        && let Err(e) = std::fs::create_dir_all(&cache_dir)
     {
-        m.insert(
-            TrayIcon::Tun.into(),
-            include_bytes!("../../../icons/win-tray-icon-blue.png").to_vec(),
-        );
-        m.insert(
-            TrayIcon::SystemProxy.into(),
-            include_bytes!("../../../icons/win-tray-icon-pink.png").to_vec(),
-        );
-        m.insert(
-            TrayIcon::Normal.into(),
-            include_bytes!("../../../icons/win-tray-icon.png").to_vec(),
-        );
+        tracing::error!("failed to create cache dir: {:?}", e);
     }
-    Arc::new(m)
-});
-
-static RESIZED_ICON_CACHE: Lazy<Arc<DashMap<&'static str, Vec<u8>>>> = Lazy::new(|| {
-    let m = DashMap::new();
-    #[cfg(windows)]
-    {
-        let scale_factor = crate::utils::help::get_max_scale_factor();
-        resize_images(&m, scale_factor);
-    }
-    Arc::new(m)
-});
-
-fn resize_images(map: &DashMap<&'static str, Vec<u8>>, scale_factor: f64) {
-    for item in RAW_ICON.iter() {
-        let (mode, icon) = item.pair();
-        let icon = crate::utils::help::resize_tray_image(icon, scale_factor).unwrap();
-        map.insert(*mode, icon);
+    if let Err(e) = std::fs::write(cache_dir.join(format!("tray_{mode}.png")), icon) {
+        tracing::error!("failed to write icon file: {:?}", e);
     }
 }
 
-pub fn on_scale_factor_changed(scale_factor: f64) {
-    resize_images(&RESIZED_ICON_CACHE, scale_factor);
+// TODO: migrate to async fn
+#[tracing_attributes::instrument(skip(paths))]
+pub fn resize_images(paths: &PathResolver, scale_factor: f64) {
+    for item in TrayIcon::all_supported() {
+        resize_image(paths, *item, scale_factor);
+    }
 }
 
-pub fn get_icon(mode: &TrayIcon) -> Vec<u8> {
-    RESIZED_ICON_CACHE
-        .clone()
-        .get::<&'static str>(&Into::<&'static str>::into(mode))
-        .unwrap()
-        .clone()
+pub fn set_icon(paths: &PathResolver, mode: TrayIcon, path: Option<PathBuf>) -> anyhow::Result<()> {
+    match path {
+        Some(path) => {
+            // try parse path and convert image to png
+            let image = image::open(&path)?;
+            image.save(tray_icons_path(paths, mode.as_str()))?;
+        }
+        None => {
+            // use default icon
+            std::fs::remove_file(tray_icons_path(paths, mode.as_str()))?;
+        }
+    }
+    refresh_icon(paths, mode);
+    Ok(())
+}
+
+pub fn set_icon_from_bytes(
+    paths: &PathResolver,
+    mode: TrayIcon,
+    bytes: &[u8],
+) -> anyhow::Result<()> {
+    image::load_from_memory(bytes)?.save(tray_icons_path(paths, mode.as_str()))?;
+    refresh_icon(paths, mode);
+    Ok(())
+}
+
+fn refresh_icon(paths: &PathResolver, mode: TrayIcon) {
+    let factor = crate::utils::help::get_max_scale_factor();
+    resize_image(paths, mode, factor);
+}
+
+pub fn on_scale_factor_changed(paths: &PathResolver, scale_factor: f64) {
+    resize_images(paths, scale_factor);
+}
+
+pub fn get_icon(paths: &PathResolver, mode: &TrayIcon) -> Vec<u8> {
+    let cache_file = paths
+        .cache_dir()
+        .join("icons")
+        .join(format!("tray_{mode}.png"));
+    match std::fs::read(&cache_file) {
+        Ok(bytes) if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) => {
+            tracing::info!("use cached icon: {:?}", cache_file);
+            bytes
+        }
+        Err(e) => {
+            tracing::error!("failed to read icon file: {:?}", e);
+            raw_bytes(mode).to_vec()
+        }
+        _ => {
+            tracing::error!("invalid icon file: {:?}", cache_file);
+            raw_bytes(mode).to_vec()
+        }
+    }
+}
+
+/// Fails if `bytes` do not decode as a tray icon, as applying them to the
+/// tray would.
+pub fn check_icon(bytes: &[u8]) -> anyhow::Result<()> {
+    tauri::image::Image::from_bytes(bytes)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Moved from the original path tests: this assertion includes GUI icon layout.
+    #[test]
+    fn config_derived_paths_join_config_dir() {
+        use nyanpasu_paths::{CLASH_CFG_GUARD_OVERRIDES, NYANPASU_CONFIG, PROFILE_YAML};
+        use std::path::Path;
+        let r = nyanpasu_core::utils::test_support::test_paths(
+            PathBuf::from("/cfg"),
+            PathBuf::from("/data"),
+        );
+        assert_eq!(r.profiles_path(), Path::new("/cfg").join(PROFILE_YAML));
+        assert_eq!(
+            r.nyanpasu_config_path(),
+            Path::new("/cfg").join(NYANPASU_CONFIG)
+        );
+        assert_eq!(
+            r.clash_guard_overrides_path(),
+            Path::new("/cfg").join(CLASH_CFG_GUARD_OVERRIDES)
+        );
+        assert_eq!(
+            r.application_config_path(),
+            Path::new("/cfg").join("application.yaml")
+        );
+        assert_eq!(
+            r.session_state_path(),
+            Path::new("/cfg").join("session-state.yaml")
+        );
+        assert_eq!(
+            r.clash_config_path(),
+            Path::new("/cfg").join("clash-config.yaml")
+        );
+        assert_eq!(r.app_profiles_dir(), Path::new("/cfg").join("profiles"));
+        assert_eq!(
+            icon_path(r.app_config_dir().as_std_path(), "light"),
+            Path::new("/cfg").join("icons").join("light.png")
+        );
+    }
+
+    #[test]
+    fn the_bundled_icons_pass_the_check_and_a_corrupt_png_fails_it() {
+        for mode in TrayIcon::all_supported() {
+            check_icon(raw_bytes(mode)).unwrap();
+        }
+        assert!(check_icon(b"\x89PNG\r\n\x1a\nnot an image").is_err());
+    }
 }

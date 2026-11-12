@@ -1,108 +1,114 @@
 {
-  "package": {
-    "productName": "Clash Nyanpasu",
-    "version": "1.5.0"
-  },
-  "build": {
-    "distDir": "../../dist",
-    "devPath": "http://localhost:3000/",
-    "beforeDevCommand": "pnpm run web:dev",
-    "beforeBuildCommand": "pnpm run web:build"
-  },
-  "tauri": {
-    "systemTray": {
-      "iconPath": "icons/win-tray-icon.png",
-      "iconAsTemplate": true
+  "$schema": "../../node_modules/@tauri-apps/cli/config.schema.json",
+  "mainBinaryName": "Clash Nyanpasu",
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "wix": {
+        "language": ["en-US", "ja-JP", "ko-KR", "ru-RU", "zh-CN", "zh-TW"],
+        "template": "./templates/installer.wxs",
+        "fragmentPaths": ["./templates/cleanup.wxs"]
+      },
+      "nsis": {
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "sidebarImage": "templates/nsis-sidebar.bmp",
+        "languages": [
+          "English",
+          "Japanese",
+          "Korean",
+          "Russian",
+          "SimpChinese",
+          "TradChinese"
+        ],
+        "template": "./templates/installer.nsi",
+        "installMode": "both"
+      }
     },
-    "bundle": {
-      "active": true,
-      "targets": "all",
-      "identifier": "moe.elaina.clash.nyanpasu",
-      "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon-new.icns",
-        "icons/icon.ico"
-      ],
-      "resources": ["resources"],
-      "externalBin": [
-        "sidecar/clash",
-        "sidecar/mihomo",
-        "sidecar/mihomo-alpha",
-        "sidecar/clash-rs"
-      ],
-      "copyright": "© 2024 Clash Nyanpasu All Rights Reserved",
-      "category": "DeveloperTool",
-      "shortDescription": "Clash Nyanpasu! (∠・ω< )⌒☆",
-      "longDescription": "Clash Nyanpasu! (∠・ω< )⌒☆",
-      "deb": {
-        "depends": ["openssl"]
-      },
-      "macOS": {
-        "frameworks": [],
-        "minimumSystemVersion": "10.15",
-        "exceptionDomain": "",
-        "signingIdentity": null,
-        "entitlements": null
-      },
-      "windows": {
-        "certificateThumbprint": null,
-        "digestAlgorithm": "sha256",
-        "timestampUrl": "",
-        "webviewInstallMode": {
-          "silent": true,
-          "type": "embedBootstrapper"
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": ["resources"],
+    "externalBin": [
+      "sidecar/clash",
+      "sidecar/mihomo",
+      "sidecar/mihomo-alpha",
+      "sidecar/clash-rs",
+      "sidecar/clash-rs-alpha",
+      "sidecar/meow",
+      "sidecar/meow-alpha",
+      "sidecar/nyanpasu-service"
+    ],
+    "copyright": "Copyright © 2024-2026 LibNyanpasu",
+    "category": "DeveloperTool",
+    "shortDescription": "Clash Nyanpasu! (∠・ω< )⌒☆",
+    "longDescription": "Clash Nyanpasu! (∠・ω< )⌒☆",
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "12.6",
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "entitlements": null,
+      "dmg": {
+        "background": "templates/dmg-background.png",
+        "windowSize": {
+          "width": 836,
+          "height": 503
         },
-        "wix": {
-          "language": ["zh-CN", "en-US", "ru-RU"],
-          "template": "./templates/installer.wxs",
-          "license": "../../LICENSE",
-          "fragmentPaths": ["./templates/cleanup.wxs"]
+        "appPosition": {
+          "x": 530,
+          "y": 252
         },
-        "nsis": {
-          "displayLanguageSelector": true,
-          "installerIcon": "icons/icon.ico",
-          "languages": ["SimpChinese", "English", "Russian"],
-          "license": "../../LICENSE",
-          "installMode": "both",
-          "template": "./templates/installer.nsi"
+        "applicationFolderPosition": {
+          "x": 235,
+          "y": 252
         }
       }
     },
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://mirror.ghproxy.com/https://github.com/LibNyanpasu/clash-nyanpasu/releases/download/updater/update-proxy.json",
-        "https://gh-proxy.com/https://github.com/LibNyanpasu/clash-nyanpasu/releases/download/updater/update-proxy.json",
-        "https://github.com/LibNyanpasu/clash-nyanpasu/releases/download/updater/update.json"
-      ],
-      "dialog": false,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlBMUM0NjMxREZCNDRGMjYKUldRbVQ3VGZNVVljbW43N0FlWjA4UkNrbTgxSWxSSXJQcExXNkZjUTlTQkIyYkJzL0tsSWF2d0cK"
-    },
-    "allowlist": {
-      "shell": {
-        "all": true
-      },
-      "window": {
-        "all": true
-      },
-      "process": {
-        "all": true
-      },
-      "globalShortcut": {
-        "all": true
-      },
-      "notification": {
-        "all": true
-      },
-      "os": {
-        "all": true
+    "linux": {
+      "deb": {
+        "depends": []
       }
     },
+    "licenseFile": "../../LICENSE",
+    "createUpdaterArtifacts": "v1Compatible"
+  },
+  "build": {
+    "beforeBuildCommand": "pnpm generate:credits && pnpm run-p web:build generate:git-info && echo $(pwd)",
+    "frontendDist": "./tmp/dist",
+    "beforeDevCommand": "pnpm run web:dev",
+    "devUrl": "http://localhost:3000/"
+  },
+  "productName": "Clash Nyanpasu",
+  "version": "2.0.1",
+  "identifier": "moe.elaina.clash.nyanpasu",
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlBMUM0NjMxREZCNDRGMjYKUldRbVQ3VGZNVVljbW43N0FlWjA4UkNrbTgxSWxSSXJQcExXNkZjUTlTQkIyYkJzL0tsSWF2d0cK",
+      "endpoints": [
+        "https://nyanpasu-script.majokeiko.com/libnyanpasu/clash-nyanpasu/releases/download/updater/update-proxy.json",
+        "https://nyanpasu.surge.sh/updater/update-proxy.json",
+        "https://github.com/libnyanpasu/clash-nyanpasu/releases/download/updater/update.json",
+        "https://ghfast.top/https://github.com/libnyanpasu/clash-nyanpasu/releases/download/updater/update.json"
+      ]
+    }
+  },
+  "app": {
     "windows": [],
     "security": {
-      "csp": "script-src 'unsafe-eval' 'self'; default-src blob: data: filesystem: ws: wss: http: https: tauri: 'unsafe-eval' 'unsafe-inline' 'self'; img-src data: 'self';"
+      "csp": "script-src 'unsafe-eval' 'self'; default-src blob: data: filesystem: ws: wss: http: https: tauri: 'unsafe-eval' 'unsafe-inline' 'self'; img-src 'self' data: asset: blob: nyanpasu-icons: http://nyanpasu-icons.localhost https://nyanpasu-icons.localhost http://localhost:* https:; connect-src 'self' data: ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* wss://*",
+      "capabilities": ["main-capability"]
     }
   }
 }

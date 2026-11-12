@@ -1,0 +1,37 @@
+import { Card, CardContent, CardHeader } from '@nyanpasu/ui/card'
+import { LinearProgress } from '@nyanpasu/ui/progress'
+import { m } from '@/paraglide/messages'
+import { formatBytes } from '@/utils/format-bytes'
+import { ClashProxiesProviderQueryItem } from '@nyanpasu/query'
+import { useProxiesSubscription } from '../../_modules/use-proxies-subscription'
+
+export const SubscriptionCard = ({
+  data,
+}: {
+  data: ClashProxiesProviderQueryItem
+}) => {
+  const { progress, total, used, hasSubscriptionInfo } =
+    useProxiesSubscription(data)
+
+  if (!hasSubscriptionInfo) {
+    return null
+  }
+
+  return (
+    <Card className="col-span-2 flex flex-col justify-between">
+      <CardHeader>{m.providers_subscription_title()}</CardHeader>
+
+      <CardContent>
+        <LinearProgress value={progress} />
+
+        <div className="flex items-center justify-between pb-2">
+          <div className="text-sm font-bold">{progress.toFixed(2)}%</div>
+
+          <div className="text-sm font-bold">
+            {formatBytes(used)} / {formatBytes(total)}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}

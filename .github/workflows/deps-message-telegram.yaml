@@ -1,0 +1,74 @@
+name: '[Reusable] Notify Telegram of Releases'
+
+on:
+  workflow_dispatch:
+    inputs:
+      nightly:
+        description: 'Nightly'
+        required: true
+        type: boolean
+        default: false
+
+      tag:
+        description: 'Release tag (defaults to the package version)'
+        required: false
+        type: string
+        default: ''
+
+  workflow_call:
+    inputs:
+      nightly:
+        description: 'Nightly'
+        required: true
+        type: boolean
+        default: false
+
+      tag:
+        description: 'Release tag (defaults to the package version)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      TELEGRAM_TOKEN:
+        description: 'Bot token of the release channel'
+        required: false
+
+jobs:
+  telegram:
+    name: Notify Telegram
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: latest
+
+      - uses: pnpm/action-setup@v6.1.1
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Install script dependencies
+        run: pnpm install --frozen-lockfile --filter @nyanpasu/scripts
+
+      - name: Send Release Notification
+        run: |
+          ARGS=""
+          if [ "$NIGHTLY" = "true" ]; then
+            ARGS="--nightly"
+          fi
+          pnpm run telegram-notify $ARGS
+        env:
+          NIGHTLY: ${{ inputs.nightly }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_RELEASE_CHANNEL: ${{ vars.TELEGRAM_RELEASE_CHANNEL }}
+          TELEGRAM_ARCHIVE_CHANNEL: ${{ vars.TELEGRAM_ARCHIVE_CHANNEL }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}

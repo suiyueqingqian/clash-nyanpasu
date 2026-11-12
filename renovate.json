@@ -1,9 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base",
+    "config:recommended",
     "default:automergeMinor",
-    "default:prConcurrentLimit10",
     "default:prHourlyLimitNone",
     "default:preserveSemverRanges",
     "default:rebaseStalePrs",
@@ -20,27 +19,54 @@
       "platformAutomerge": false
     },
     {
+      "groupName": "Oxc packages",
+      "matchPackageNames": ["/oxc/"]
+    },
+    {
       "groupName": "Bundler packages",
-      "matchPackagePatterns": ["vite", "unplugin"]
+      "matchPackageNames": ["/vite/", "/unplugin/"]
     },
     {
       "groupName": "Typescript packages",
-      "matchPackagePatterns": ["@types", "ts-", "tsx", "typescript"]
+      "matchPackageNames": ["/@types/", "/ts-/", "/tsx/", "/typescript/"]
     },
     {
       "groupName": "Lint packages",
-      "matchPackagePatterns": [
-        "eslint",
-        "prettier",
-        "commitlint",
-        "stylelint",
-        "husky",
-        "lint-staged"
+      "matchPackageNames": [
+        "/eslint/",
+        "/prettier/",
+        "/commitlint/",
+        "/stylelint/",
+        "/husky/",
+        "/lint-staged/"
       ]
     },
     {
+      "groupName": "Tauri packages",
+      "matchPackageNames": ["/tauri/"]
+    },
+    {
+      "groupName": "Windows packages",
+      "matchPackageNames": ["/windows/", "/webview2-com/", "winreg"]
+    },
+    {
+      "groupName": "Object-C packages",
+      "matchPackageNames": ["/objc2/"]
+    },
+    {
       "groupName": "Testing packages",
-      "matchPackagePatterns": ["vitest", "cypress", "wdio"]
+      "matchPackageNames": ["/vitest/", "/cypress/", "/wdio/"]
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["ubuntu"],
+      "enabled": false
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "automerge": false
     }
-  ]
+  ],
+  "prConcurrentLimit": 30,
+  "cloneSubmodules": true
 }

@@ -1,0 +1,128 @@
+name: '[Reusable] Publish Updater Manifests'
+
+on:
+  workflow_dispatch:
+    inputs:
+      nightly:
+        description: 'Nightly'
+        required: true
+        type: boolean
+        default: false
+      release_body:
+        description: 'Release Body'
+        required: false
+        type: string
+      sourceforge_mirrors_json:
+        description: 'Verified SourceForge mirror metadata'
+        required: false
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      nightly:
+        description: 'Nightly'
+        required: true
+        type: boolean
+      release_body:
+        description: 'Release Body'
+        required: false
+        type: string
+      sourceforge_mirrors_json:
+        description: 'Verified SourceForge mirror metadata'
+        required: false
+        type: string
+    secrets:
+      SURGE_TOKEN:
+        required: true
+      SOURCEFORGE_USERNAME:
+        required: false
+      SOURCEFORGE_SSH_KEY:
+        required: false
+      SOURCEFORGE_KNOWN_HOSTS:
+        required: false
+
+jobs:
+  updater:
+    name: Update Updater
+    runs-on: ubuntu-latest
+    # Runs replace the same assets on the shared `updater` release. Each run
+    # rebuilds its feeds from the current release list, so a newer pending run
+    # may supersede an older one of the same kind.
+    concurrency:
+      group: updater-manifests-${{ inputs.nightly }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.ref }}
+          # blocked by https://github.com/actions/checkout/issues/1467
+
+      - name: Fetch git tags
+        run: git fetch --tags
+
+      - name: Install Node latest
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: latest
+
+      - uses: pnpm/action-setup@v6.1.1
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Test unified updater manifest
+        run: pnpm run test:updater
+
+      - name: Update Nightly Updater
+        if: ${{ inputs.nightly == true }}
+        run: pnpm run updater:nightly
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCEFORGE_MIRRORS_JSON: ${{ inputs.sourceforge_mirrors_json }}
+
+      - name: Update Stable and Beta Updaters
+        if: ${{ inputs.nightly == false }}
+        run: pnpm run updater
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCEFORGE_MIRRORS_JSON: ${{ inputs.sourceforge_mirrors_json }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_BODY: ${{ inputs.release_body || github.event.release.body }}
+
+      - name: Download updater files from Github release
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: updater
+          repository: libnyanpasu/clash-nyanpasu
+          fileName: '*.json'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          out-file-path: manifest/site/updater
+
+      - name: Upload updater to surge.sh
+        run: |
+          pnpm i -g surge
+          surge manifest/site nyanpasu.surge.sh
+        env:
+          SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
+
+      - name: Publish updater manifests to SourceForge Project Web
+        if: ${{ vars.SOURCEFORGE_PROJECT != '' && inputs.sourceforge_mirrors_json != '' }}
+        run: pnpm run sourceforge:web-publish manifest/site/updater ${{ inputs.nightly == true && 'nightly' || 'release' }} sourceforge-web-report.json
+        env:
+          SOURCEFORGE_PROJECT: ${{ vars.SOURCEFORGE_PROJECT }}
+          SOURCEFORGE_USERNAME: ${{ vars.SOURCEFORGE_USERNAME || secrets.SOURCEFORGE_USERNAME }}
+          SOURCEFORGE_BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          SOURCEFORGE_SSH_KEY: ${{ secrets.SOURCEFORGE_SSH_KEY }}
+          SOURCEFORGE_KNOWN_HOSTS: ${{ secrets.SOURCEFORGE_KNOWN_HOSTS }}
+
+      - name: Preserve SourceForge manifest publication report
+        if: ${{ always() && vars.SOURCEFORGE_PROJECT != '' && inputs.sourceforge_mirrors_json != '' }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: sourceforge-web-publication-report
+          path: sourceforge-web-report.json
+          if-no-files-found: warn
